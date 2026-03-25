@@ -1,0 +1,9 @@
+User-agent: *
+Disallow: /wp-admin/
+Disallow: /wp-login.php
+Disallow: /wp-includes/
+Disallow: /wp-content/plugins/
+Disallow: /wp-json/
+Disallow: *?s=*
+
+Sitemap: https://youraioffice.ca/sitemap.xml
