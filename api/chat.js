@@ -77,10 +77,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid request: messages array required.' });
   }
 
-  // Sanitize messages
+  // Sanitize messages and format them for the Gemini API
+  // Gemini uses 'model' instead of 'assistant' for the AI role.
   const safeMessages = messages
     .filter(m => ['user', 'assistant'].includes(m.role) && typeof m.content === 'string')
-    .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }))
+    .map(m => ({ 
+      role: m.role === 'assistant' ? 'model' : 'user', 
+      parts: [{ text: m.content.slice(0, 4000) }] 
+    }))
     .slice(-20);
 
   if (safeMessages.length === 0) {
@@ -88,32 +92,40 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error('GEMINI_API_KEY is not set in environment variables');
+      return res.status(500).json({ error: 'API key configuration missing.' });
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: SYSTEM_PROMPT,
-        messages: safeMessages
+        systemInstruction: {
+          parts: [{ text: SYSTEM_PROMPT }]
+        },
+        contents: safeMessages,
+        generationConfig: {
+          maxOutputTokens: 1000,
+        }
       })
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      console.error('Anthropic error:', err);
+      console.error('Gemini API error:', err);
       return res.status(502).json({ error: 'Upstream API error.' });
     }
 
     const data = await response.json();
-    const reply = data.content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('');
+    
+    // Extract text from the Gemini response structure
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     return res.status(200).json({ reply });
 
